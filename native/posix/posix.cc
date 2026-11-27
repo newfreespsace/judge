@@ -2,6 +2,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <cerrno>
+#include <system_error>
 
 auto Init(Napi::Env env, Napi::Object exports) {
     exports.Set("pipe", Napi::Function::New(env, [] (const Napi::CallbackInfo &info) {

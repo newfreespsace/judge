@@ -1,8 +1,12 @@
+#include <cstdint> // The pinned testlib header uses uint64_t without including <cstdint>.
 #include <testlib.h>
 #include <napi.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <cerrno>
 #include <cstdio>
+#include <functional>
+#include <system_error>
 
 #include "integers.h"
 #include "floats.h"

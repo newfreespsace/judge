@@ -53,6 +53,8 @@ $ cp config-example.yaml config.yaml
 
 CI and automatic deployment use the same install script. It sets the CMake 4 policy compatibility level for the locked `simple-sandbox` dependency and loads the standard path formatter on newer fmt releases. Older fmt releases can use their existing stream formatting support.
 
+After building on Linux, run `node tests/native.test.cjs` to verify that Node loads the compiled addons and can read and write through a POSIX pipe.
+
 Add a judge client to your Lyrio backend server with `/api/judgeClient/addJudgeClient` and copy the `key` in the response.
 
 Create a copy of the config file, then edit it:
