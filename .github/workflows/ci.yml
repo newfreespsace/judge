@@ -12,20 +12,78 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out
-      uses: actions/checkout@v2
+      uses: actions/checkout@v6
       with:
         submodules: true
+        persist-credentials: false
     - name: Set up Node
-      uses: actions/setup-node@v2-beta
+      uses: actions/setup-node@v6
       with:
         node-version: 16.x
     - name: Install build dependencies
       run: sudo apt-get update && sudo apt-get install -y libfmt-dev
     - name: Install
-      run: yarn
+      run: yarn install --frozen-lockfile
     - name: Test building
       run: yarn test
     - name: Lint
       run: yarn lint
     - name: Check style
       run: yarn check-style
+    - name: Test deployment
+      run: bash tests/deploy.test.sh
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    concurrency:
+      group: judge-production
+      cancel-in-progress: false
+    steps:
+    - name: Check out the tested commit
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.sha }}
+        submodules: true
+        persist-credentials: false
+    - name: Upload and deploy
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        SERVER_PORT: ${{ secrets.SERVER_PORT }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+        SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+      run: |
+        set -euo pipefail
+        latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+        if [[ "$latest" != "$GITHUB_SHA" ]]; then
+          echo "main has advanced. Its newest commit will be deployed by its own CI run."
+          exit 0
+        fi
+
+        : "${SERVER_HOST:?}" "${SERVER_PORT:?}" "${SERVER_USER:?}" "${SERVER_SSH_KEY:?}" "${SERVER_KNOWN_HOSTS:?}"
+        work=$(mktemp -d)
+        trap 'rm -rf -- "$work"' EXIT
+        umask 077
+        printf '%s\n' "$SERVER_SSH_KEY" > "$work/key"
+        printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$work/known_hosts"
+        ssh_options=(-i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o "UserKnownHostsFile=$work/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+        target="$SERVER_USER@$SERVER_HOST"
+
+        mkdir -p "$work/source/vendor/testlib"
+        git archive "$GITHUB_SHA" | tar -x -C "$work/source"
+        git -C vendor/testlib archive HEAD | tar -x -C "$work/source/vendor/testlib"
+        test -f "$work/source/vendor/testlib/testlib.h"
+        tar -czf "$work/judge.tar.gz" -C "$work/source" .
+
+        upload=$(ssh "${ssh_options[@]}" -p "$SERVER_PORT" "$target" 'mktemp -d /tmp/nsoj-judge.XXXXXXXX')
+        [[ "$upload" =~ ^/tmp/nsoj-judge\.[A-Za-z0-9]{8}$ ]]
+        trap 'ssh "${ssh_options[@]}" -p "$SERVER_PORT" "$target" "rm -rf -- $upload" || true; rm -rf -- "$work"' EXIT
+        scp "${ssh_options[@]}" -P "$SERVER_PORT" "$work/judge.tar.gz" .github/scripts/deploy.sh "$target:$upload/"
+        ssh "${ssh_options[@]}" -p "$SERVER_PORT" "$target" "bash '$upload/deploy.sh' '$GITHUB_SHA' '$upload/judge.tar.gz'"

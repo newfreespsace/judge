@@ -1,6 +1,7 @@
 import fs from "fs";
 import crypto from "crypto";
 import { join, normalize } from "path";
+import type { Readable } from "stream";
 
 import axios from "axios";
 import AgentKeepAlive from "agentkeepalive";
@@ -185,8 +186,9 @@ export const download = (() => {
         }
 
         // Failed
-        const errorBody = axios.isAxiosError(e) ? await streamToString(e.response.data as any) : null;
-        throw new Error(`Failed to download ${description}: ${e}` + (errorBody ? "\n\n" + errorBody + "\n\n" : ""));
+        const errorBody = axios.isAxiosError(e) ? await streamToString(e.response.data as Readable) : null;
+        const details = errorBody ? `\n\n${errorBody}\n\n` : "";
+        throw new Error(`Failed to download ${description}: ${e}${details}`);
       } finally {
         fileStream.close();
       }

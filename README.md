@@ -108,6 +108,58 @@ Start it with:
 $ LYRIO_JUDGE_CONFIG_FILE=./config.yaml yarn start
 ```
 
+## NSOJ 自动部署
+
+推送到 `main` 后，[CI](.github/workflows/ci.yml) 通过才启动部署。Actions 上传该提交和 `vendor/testlib`，Linux 服务器安装锁定依赖并编译原生模块。构建成功后切换 `/opt/nsoj-judge` 指向的发布目录，再用 root 的 PM2 重启 `nsoj-judge`。PM2 的 PID 和工作目录检查失败时，部署脚本会切回上一版本。
+
+### 一次性准备服务器
+
+以下命令用于现有服务的工作目录为 `/opt/nsoj-judge`、启动时读取该目录下的 `config.yaml`、由 root 的 `/usr/bin/pm2` 管理且服务名为 `nsoj-judge` 的服务器。使用部署账号登录后执行。它会保留原工作树并创建初始发布链接，PM2 继续使用原工作目录路径。
+
+```bash
+(
+  set -e
+  active=/opt/nsoj-judge
+  releases=/opt/nsoj-judge-releases
+  test -d "$active" && test ! -L "$active" && test ! -e "$releases/baseline" || exit 1
+  sudo -n install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "$releases"
+  install -m 0600 "$active/config.yaml" "$releases/config.yaml"
+  sudo -n mv -T -- "$active" "$releases/baseline"
+  if ! sudo -n ln -s -- "$releases/baseline" "$active"; then
+    sudo -n mv -T -- "$releases/baseline" "$active"
+    exit 1
+  fi
+  readlink -f "$active"
+  sudo -H -n /usr/bin/pm2 pid nsoj-judge
+)
+```
+
+后续版本读取 `/opt/nsoj-judge-releases/config.yaml`。配置中的 rootfs、数据、缓存和评测工作目录使用服务器上的绝对路径。部署账号需要可用的 Node、Yarn、编译工具、`flock`，以及切换 `/opt/nsoj-judge` 和重启 root PM2 进程的非交互 sudo 权限。
+
+### 一次性配置 GitHub
+
+1. 在本机为 Actions 生成独立的部署密钥，将公钥加入服务器部署账号。在 NSOJ 服务器上用 `lee` 和端口 `23581`。
+
+   ```bash
+   ssh-keygen -t ed25519 -N '' -C 'nsoj-judge-actions' -f ~/.ssh/nsoj-judge-actions
+   ssh-copy-id -i ~/.ssh/nsoj-judge-actions.pub -p 23581 lee@nsoj.top
+   ssh -i ~/.ssh/nsoj-judge-actions -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -p 23581 lee@nsoj.top 'id -un'
+   ```
+
+2. 打开 Judge 仓库的 **Settings → Secrets and variables → Actions**，添加以下 Repository secrets。`SERVER_KNOWN_HOSTS` 使用本机已验证的主机密钥记录。
+
+   | Secret | NSOJ 示例 |
+   | --- | --- |
+   | `SERVER_HOST` | `nsoj.top` |
+   | `SERVER_PORT` | `23581` |
+   | `SERVER_USER` | `lee` |
+   | `SERVER_SSH_KEY` | `~/.ssh/nsoj-judge-actions` 文件内容 |
+   | `SERVER_KNOWN_HOSTS` | `ssh-keygen -F '[nsoj.top]:23581' -f ~/.ssh/known_hosts` 输出中去掉 `#` 开头的行 |
+
+3. 将工作流提交推送到 `main`。在 **Actions → CI → deploy** 查看首发结果，然后到后端确认评测机已上线并提交一道最小题。PM2 检查覆盖进程启动，实际评测验证后端连接和沙箱。
+
+部署成功时日志会输出上一版本路径。需要人工回滚时，等部署结束后在服务器将 `/opt/nsoj-judge` 链接切回该路径，再执行 `sudo -H -n /usr/bin/pm2 restart nsoj-judge`。确认新版可用后，可清理已经不用的发布目录。`baseline` 保存原工作树。
+
 # Parallel Judging
 You can run multiple judge clients with different key on multiple machines.
 
