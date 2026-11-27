@@ -27,6 +27,7 @@ You need a Linux system with:
 
 * Kernel booted with `cgroup_enable=memory swapaccount=1`.
 * A C++ 17 compiler (e.g. `g++-8` or `clang++-8`).
+* CMake 3.8 or later.
 * A sandbox [rootfs](#Sandbox-Rootfs).
 
 Clone the git repo (`--recursive` is required for git submodules):
@@ -46,9 +47,11 @@ You may need to specify `CXX` environment variable to build with your C++ 17 com
 
 ```bash
 $ export CXX=g++-8
-$ yarn
+$ CMAKE_POLICY_VERSION_MINIMUM=3.5 yarn install --frozen-lockfile
 $ cp config-example.yaml config.yaml
 ```
+
+On CMake 4, the environment variable lets the locked `simple-sandbox` dependency configure its native build with policy compatibility at 3.5. CI and automatic deployment set it during dependency installation.
 
 Add a judge client to your Lyrio backend server with `/api/judgeClient/addJudgeClient` and copy the `key` in the response.
 

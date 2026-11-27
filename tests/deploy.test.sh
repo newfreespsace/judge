@@ -44,6 +44,7 @@ cat > "$fixture/bin/yarn" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$*" == 'install --frozen-lockfile --production=false' ]]
+[[ "${CMAKE_POLICY_VERSION_MINIMUM:-}" == 3.5 ]]
 [[ -f package.json && -L config.yaml && -r config.yaml ]]
 [[ "${TEST_BUILD_FAIL:-}" != 1 ]]
 SHIM
