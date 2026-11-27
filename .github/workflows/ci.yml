@@ -26,6 +26,8 @@ jobs:
       run: bash scripts/install-dependencies.sh
     - name: Test native modules
       run: node tests/native.test.cjs
+    - name: Test Hack verdicts
+      run: node --test tests/hack.test.cjs
     - name: Test building
       run: yarn test
     - name: Lint

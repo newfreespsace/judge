@@ -5,6 +5,7 @@ import SocketIOParser from "socket.io-msgpack-parser";
 
 import config, { updateServerSideConfig } from "./config";
 import taskHandler, { Task } from "./task";
+import { HackTask, runHack } from "./task/hack";
 
 import getSystemInfo from "./systemInfo";
 import { CanceledError } from "./error";
@@ -12,6 +13,8 @@ import { CanceledError } from "./error";
 export class RPC {
   // eslint-disable-next-line no-undef
   private socket: Socket;
+
+  private hackVersion: number;
 
   /**
    * For each task:
@@ -60,9 +63,10 @@ export class RPC {
 
     await this.withTimeout(
       new Promise<void>(resolve => {
-        this.socket.on("ready", async (name: string, serverSideConfig: unknown) => {
+        this.socket.on("ready", async (name: string, serverSideConfig: unknown, capabilities?: { hack?: number }) => {
           winston.info(`Successfully authorized as ${name}`);
           updateServerSideConfig(serverSideConfig);
+          this.hackVersion = capabilities?.hack;
           this.socket.emit("systemInfo", await getSystemInfo());
 
           resolve();
@@ -146,6 +150,49 @@ export class RPC {
     );
 
     return urls;
+  }
+
+  private async request<T>(event: string, payload: unknown): Promise<T> {
+    return await this.withTimeout(
+      new Promise<T>(resolve => {
+        this.socket.emit(event, payload, resolve);
+      })
+    );
+  }
+
+  async startHackConsumer() {
+    if (this.hackVersion !== 1) return;
+
+    for (;;) {
+      const task = await this.request<HackTask | false>("claimHack", 1);
+      if (!task) {
+        await new Promise(resolve => {
+          setTimeout(resolve, 2000);
+        });
+        continue;
+      }
+
+      const { taskId } = task;
+      this.pendingTaskCancelCallback.set(taskId, new Set());
+      const heartbeat = setInterval(async () => {
+        try {
+          if (!(await this.request<boolean>("heartbeatHack", taskId))) this.cancelTask(taskId);
+        } catch {
+          this.cancelTask(taskId);
+        }
+      }, 15000);
+
+      try {
+        const report = await runHack(task);
+        this.ensureNotCanceled(taskId);
+        await this.request<boolean>("finishHack", { taskId, report });
+      } catch (error) {
+        if (!(error instanceof CanceledError)) winston.error(`Unable to process Hack task ${taskId}`);
+      } finally {
+        clearInterval(heartbeat);
+        this.pendingTaskCancelCallback.delete(taskId);
+      }
+    }
   }
 
   async startTaskConsumerThread(threadId: number) {

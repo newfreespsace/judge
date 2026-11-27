@@ -13,6 +13,7 @@ The judge service of Lyrio.
 * Run multiple tasks of multiple submissions in the same time.
 * Cache compiled binary files to save judging time.
 * Custom checkers with multiple interfaces for Traditional problems.
+* Hack tasks from NSOJ backends that advertise Hack v1, using the configured input validator, reference solution and checker.
 * Interaction problems with stdio or shared memory interaction interface.
 * Security and resources limitting powered by [simple-sandbox](https://github.com/t123yh/simple-sandbox).
 * Support multiple languages common or uncommon in competitive programming.
@@ -20,7 +21,7 @@ The judge service of Lyrio.
 These features are on the plan:
 
 * Other types of problem (Communication, ...)
-* Other forms of task (Hack, CustomTest, ...)
+* Other forms of task (CustomTest, ...)
 
 # Deploying
 You need a Linux system with:
@@ -54,6 +55,8 @@ $ cp config-example.yaml config.yaml
 CI and automatic deployment use the same install script. It sets the CMake 4 policy compatibility level for the locked `simple-sandbox` dependency and loads the standard path formatter on newer fmt releases. Older fmt releases can use their existing stream formatting support.
 
 After building on Linux, run `node tests/native.test.cjs` to verify that Node loads the compiled addons and can read and write through a POSIX pipe.
+
+Run `node --test tests/hack.test.cjs` to verify Hack verdict classification, TLE confirmation and lease cancellation.
 
 Add a judge client to your Lyrio backend server with `/api/judgeClient/addJudgeClient` and copy the `key` in the response.
 
