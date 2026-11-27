@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script=$(cd -- "$(dirname -- "$0")/.." && pwd)/.github/scripts/deploy.sh
+repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
+script="$repo/.github/scripts/deploy.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 export NSOJ_JUDGE_DEPLOY_ROOT="$fixture/opt"
 export TEST_RESTARTS="$fixture/restarts"
 export PATH="$fixture/bin:$PATH"
+export CXXFLAGS=-g
+unset CMAKE_POLICY_VERSION_MINIMUM
 releases="$NSOJ_JUDGE_DEPLOY_ROOT/nsoj-judge-releases"
 baseline="$releases/baseline"
 active="$NSOJ_JUDGE_DEPLOY_ROOT/nsoj-judge"
 commit=0123456789abcdef0123456789abcdef01234567
-mkdir -p "$baseline" "$fixture/bin" "$fixture/source"
+mkdir -p "$baseline" "$fixture/bin" "$fixture/source/scripts" "$fixture/source/native"
 printf 'test configuration\n' > "$releases/config.yaml"
 printf '{}\n' > "$fixture/source/package.json"
+cp "$repo/scripts/install-dependencies.sh" "$fixture/source/scripts/"
+cp "$repo/native/fmt-compat.h" "$fixture/source/native/"
 tar -czf "$fixture/source.tar.gz" -C "$fixture/source" .
 ln -s -- "$baseline" "$active"
 
@@ -45,6 +50,7 @@ cat > "$fixture/bin/yarn" <<'SHIM'
 set -euo pipefail
 [[ "$*" == 'install --frozen-lockfile --production=false' ]]
 [[ "${CMAKE_POLICY_VERSION_MINIMUM:-}" == 3.5 ]]
+[[ "$CXXFLAGS" == "-g -include \"$PWD/native/fmt-compat.h\"" && -f native/fmt-compat.h ]]
 [[ -f package.json && -L config.yaml && -r config.yaml ]]
 [[ "${TEST_BUILD_FAIL:-}" != 1 ]]
 SHIM

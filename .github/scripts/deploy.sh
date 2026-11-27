@@ -50,7 +50,7 @@ running_in() {
 
 tar -xzf "$archive" -C "$release"
 ln -s -- "$releases/config.yaml" "$release/config.yaml"
-(cd "$release" && CMAKE_POLICY_VERSION_MINIMUM=3.5 yarn install --frozen-lockfile --production=false)
+bash "$release/scripts/install-dependencies.sh" --production=false
 
 keep_release=true
 activate "$release"

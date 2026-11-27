@@ -47,11 +47,11 @@ You may need to specify `CXX` environment variable to build with your C++ 17 com
 
 ```bash
 $ export CXX=g++-8
-$ CMAKE_POLICY_VERSION_MINIMUM=3.5 yarn install --frozen-lockfile
+$ bash scripts/install-dependencies.sh
 $ cp config-example.yaml config.yaml
 ```
 
-On CMake 4, the environment variable lets the locked `simple-sandbox` dependency configure its native build with policy compatibility at 3.5. CI and automatic deployment set it during dependency installation.
+CI and automatic deployment use the same install script. It sets the CMake 4 policy compatibility level for the locked `simple-sandbox` dependency and loads the standard path formatter on newer fmt releases. Older fmt releases can use their existing stream formatting support.
 
 Add a judge client to your Lyrio backend server with `/api/judgeClient/addJudgeClient` and copy the `key` in the response.
 
