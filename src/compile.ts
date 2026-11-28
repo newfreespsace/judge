@@ -34,11 +34,15 @@ export interface CompileTask {
   extraSourceFiles?: Record<string, string>;
 }
 
-async function hashCompileTask(compileTask: CompileTask): Promise<string> {
+async function hashCompileTask(
+  compileTask: CompileTask,
+  cppDefines?: Readonly<Record<string, string>>
+): Promise<string> {
   return objectHash({
     language: compileTask.language,
     code: compileTask.code,
     compileAndRunOptions: compileTask.compileAndRunOptions,
+    ...(cppDefines && { cppDefines }),
     extraSourceFiles:
       compileTask.extraSourceFiles &&
       (await waitForAll(
@@ -146,10 +150,13 @@ interface PendingCompileTask {
 const pendingCompileTasks: Map<string, PendingCompileTask> = new Map();
 const compileResultCache = new CompileResultCache();
 
-export async function compile(compileTask: CompileTask): Promise<CompileResult> {
+export async function compile(
+  compileTask: CompileTask,
+  cppDefines?: Readonly<Record<string, string>>
+): Promise<CompileResult> {
   const languageConfig = getLanguage(compileTask.language);
 
-  const compileTaskHash = await hashCompileTask(compileTask);
+  const compileTaskHash = await hashCompileTask(compileTask, cppDefines);
 
   const cachedResult = compileResultCache.get(compileTaskHash);
   if (cachedResult) {
@@ -169,7 +176,13 @@ export async function compile(compileTask: CompileTask): Promise<CompileResult> 
         resultConsumers,
         promise: runTaskQueued(async taskWorkingDirectory => {
           // The compileResult is already reference()-ed
-          const compileResult = await doCompile(compileTask, compileTaskHash, languageConfig, taskWorkingDirectory);
+          const compileResult = await doCompile(
+            compileTask,
+            compileTaskHash,
+            languageConfig,
+            taskWorkingDirectory,
+            cppDefines
+          );
           winston.verbose(`Compile result: ${JSON.stringify(compileResult)}`);
 
           for (const resultConsumer of resultConsumers)
@@ -195,7 +208,8 @@ async function doCompile(
   compileTask: CompileTask,
   compileTaskHash: string,
   languageConfig: LanguageConfig<unknown>,
-  taskWorkingDirectory: string
+  taskWorkingDirectory: string,
+  cppDefines?: Readonly<Record<string, string>>
 ): Promise<CompileResult> {
   const { sourceFilename, binarySizeLimit } = languageConfig.getMetaOptions(compileTask.compileAndRunOptions);
 
@@ -229,7 +243,8 @@ async function doCompile(
     sourceDirectoryInside: sourceDirectory.inside,
     sourcePathInside: sourceFile.inside,
     binaryDirectoryInside: binaryDirectory.inside,
-    compileAndRunOptions: compileTask.compileAndRunOptions
+    compileAndRunOptions: compileTask.compileAndRunOptions,
+    cppDefines
   });
 
   // The `taskId` parameter of `runSandbox` is just used to cancel the sandbox

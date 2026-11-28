@@ -40,6 +40,8 @@ export interface HackReport {
   output?: Buffer;
 }
 
+const INVALID_INPUT_EXIT_CODE = 1;
+
 const failingVerdicts = new Set([
   TestcaseStatusTraditional.WrongAnswer,
   TestcaseStatusTraditional.RuntimeError,
@@ -79,7 +81,9 @@ async function readReferenceOutput(filename: string, limit: number) {
 }
 
 async function runSupportProgram(task: HackTask, program: CompileTask, validate: boolean) {
-  const compiled = await compile(program);
+  const cppDefines =
+    validate && program.language === "cpp" ? { FAIL_EXIT_CODE: String(INVALID_INPUT_EXIT_CODE) } : undefined;
+  const compiled = await compile(program, cppDefines);
   if (!(compiled instanceof CompileResultSuccess)) throw new Error("Failed to compile Hack support program");
 
   const { timeLimit, memoryLimit, fileIo } = task.snapshot.judgeInfo;
@@ -119,8 +123,9 @@ async function runSupportProgram(task: HackTask, program: CompileTask, validate:
           cpuAffinity: CpuAffinityStrategy.UserProgram
         });
 
-        if (validate && result.status === SandboxStatus.RuntimeError && result.code === 1) return null;
-        if (result.status !== SandboxStatus.OK) throw new Error("Hack support program failed");
+        // The sandbox reports all normal exits as OK and provides the exit code separately.
+        if (validate && result.status === SandboxStatus.OK && result.code === INVALID_INPUT_EXIT_CODE) return null;
+        if (result.status !== SandboxStatus.OK || result.code !== 0) throw new Error("Hack support program failed");
         return validate ? Buffer.alloc(0) : await readReferenceOutput(output.outside, task.outputLimit);
       } finally {
         await fsNative.emptyDir(directory);

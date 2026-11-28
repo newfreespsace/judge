@@ -13,7 +13,7 @@ export const languageConfig: LanguageConfig<CompileAndRunOptionsCpp> = {
     sourceFilename: "main.cpp",
     binarySizeLimit: 5 * 1024 * 1024 // 5 MiB, enough unless someone initlizes globals badly
   }),
-  compile: ({ sourcePathInside, binaryDirectoryInside, compileAndRunOptions }) => ({
+  compile: ({ sourcePathInside, binaryDirectoryInside, compileAndRunOptions, cppDefines }) => ({
     executable: compileAndRunOptions.compiler === "g++" ? "g++" : "clang++",
     parameters: [
       "-o",
@@ -22,6 +22,7 @@ export const languageConfig: LanguageConfig<CompileAndRunOptionsCpp> = {
       `-O${compileAndRunOptions.O}`,
       "-fdiagnostics-color=always",
       "-DONLINE_JUDGE",
+      ...Object.entries(cppDefines ?? {}).map(([name, value]) => `-D${name}=${value}`),
       "-Wall",
       "-Wextra",
       "-Wno-unused-result",

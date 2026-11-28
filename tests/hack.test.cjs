@@ -51,8 +51,8 @@ async function loadWorker({ target = [], support = [] } = {}) {
   const deps = {
     "simple-sandbox": { SandboxStatus: sandboxStatus },
     "@/compile": {
-      compile: async program => {
-        calls.compile.push(program);
+      compile: async (program, cppDefines) => {
+        calls.compile.push({ program, cppDefines });
         return new CompileResultSuccess();
       },
       CompileResultSuccess
@@ -140,8 +140,8 @@ test("validates stdin then preserves raw reference output for a file I/O target"
   const artifactId = "hack-" + createHash("sha256").update(artifact).digest("hex");
   const { runHack, calls, directory } = await loadWorker({
     support: [
-      { status: sandboxStatus.OK },
-      { status: sandboxStatus.OK, output, inputFile: "p.in", outputFile: "p.out" }
+      { status: sandboxStatus.OK, code: 0 },
+      { status: sandboxStatus.OK, code: 0, output, inputFile: "p.in", outputFile: "p.out" }
     ],
     target: [verdict.WrongAnswer]
   });
@@ -150,7 +150,10 @@ test("validates stdin then preserves raw reference output for a file I/O target"
   request.snapshot.artifacts[artifactId] = artifact.toString("base64");
   request.snapshot.testData["checker.cpp"] = artifactId;
   assert.deepEqual(await runHack(request), { outcome: "Succeeded", verdict: verdict.WrongAnswer, output });
-  assert.deepEqual(calls.compile, [request.snapshot.validator, request.snapshot.reference]);
+  assert.deepEqual(calls.compile, [
+    { program: request.snapshot.validator, cppDefines: { FAIL_EXIT_CODE: "1" } },
+    { program: request.snapshot.reference, cppDefines: undefined }
+  ]);
   assert.deepEqual(
     calls.support.map(call => call.input),
     [request.input, request.input]
@@ -163,6 +166,68 @@ test("validates stdin then preserves raw reference output for a file I/O target"
   assert.equal(calls.cleanup, 2);
   assert.deepEqual(calls.retained, [artifactId]);
   assert.equal(calls.released, 1);
+});
+
+test("C++ compilation passes validator defines and caches the binary separately", async () => {
+  const directory = await fs.mkdtemp(path.join(fixtureRoot, "compile-"));
+  const parameters = [];
+  const native = {
+    ensureDir: filename => fs.mkdir(filename, { recursive: true }),
+    emptyDir: async () => {},
+    copy: (source, destination) => fs.cp(source, destination, { recursive: true }),
+    remove: filename => fs.rm(filename, { recursive: true, force: true }),
+    calcSize: async filename => (await fs.stat(path.join(filename, "a.out"))).size
+  };
+  const { languageConfig } = await loadSource("languages/cpp.ts", {});
+  const utils = await loadSource("utils.ts", { "./fsNative": native, "./config": {} });
+  const { compile } = await loadSource("compile.ts", {
+    "simple-sandbox": { SandboxStatus: sandboxStatus },
+    winston: { verbose: () => {} },
+    "./languages": () => languageConfig,
+    "./utils": utils,
+    "./omittableString": { readFileOmitted: async () => "" },
+    "./sandbox": {
+      SANDBOX_INSIDE_PATH_SOURCE: "/source",
+      SANDBOX_INSIDE_PATH_BINARY: "/binary",
+      CpuAffinityStrategy: { Compiler: "compiler" },
+      runSandbox: async (_, config) => {
+        parameters.push(config.parameters);
+        await fs.writeFile(path.join(config.extraMounts[1].mappedPath.outside, "a.out"), "binary");
+        return { status: sandboxStatus.OK, code: 0 };
+      }
+    },
+    "./config": {
+      __esModule: true,
+      default: { binaryCacheStore: path.join(directory, "cache"), binaryCacheMaxSize: 1024 },
+      serverSideConfig: { limit: { compilerMessage: 256 } }
+    },
+    "./taskQueue": { runTaskQueued: async callback => callback(await fs.mkdtemp(path.join(directory, "task-"))) },
+    "./file": {},
+    "./fsNative": native
+  });
+  const program = {
+    language: "cpp",
+    code: "int main() {}",
+    compileAndRunOptions: { compiler: "g++", std: "c++17", O: "2", m: "64" }
+  };
+  const ordinary = await compile(program);
+  const validator = await compile(program, { FAIL_EXIT_CODE: "1" });
+  const cachedValidator = await compile(program, { FAIL_EXIT_CODE: "1" });
+  assert.notEqual(validator.compileTaskHash, ordinary.compileTaskHash);
+  assert.equal(cachedValidator, validator);
+  assert.deepEqual(
+    parameters.map(args => args.filter(arg => arg?.startsWith("-DFAIL_EXIT_CODE"))),
+    [[], ["-DFAIL_EXIT_CODE=1"]]
+  );
+  await Promise.all([ordinary.dereference(), validator.dereference(), cachedValidator.dereference()]);
+});
+
+test("validator in another language receives only its configured compile options", async () => {
+  const { runHack, calls } = await loadWorker({ support: [{ status: sandboxStatus.OK, code: 1 }] });
+  const request = task();
+  request.snapshot.validator.language = "python";
+  assert.deepEqual(await runHack(request), { outcome: "InvalidInput" });
+  assert.deepEqual(calls.compile, [{ program: request.snapshot.validator, cppDefines: undefined }]);
 });
 
 test("uses the stored output on replay and confirms TLE with identical bytes", async () => {
@@ -193,19 +258,49 @@ for (const [label, target, outcome] of [
   });
 }
 
-for (const [label, support, outcome] of [
-  ["validator rejection", [{ status: sandboxStatus.RuntimeError, code: 1 }], "InvalidInput"],
-  ["validator crash", [{ status: sandboxStatus.RuntimeError, code: 2 }], "JudgeError"],
-  ["reference crash", [{ status: sandboxStatus.OK }, { status: sandboxStatus.RuntimeError, code: 1 }], "JudgeError"],
+test("validator exit code 1 rejects input before the reference program or target runs", async () => {
+  const { runHack, calls } = await loadWorker({
+    support: [
+      { status: sandboxStatus.OK, code: 1 },
+      { status: sandboxStatus.OK, code: 0, output: Buffer.from("answer") }
+    ],
+    target: [verdict.WrongAnswer]
+  });
+  const request = { ...task(), input: Buffer.from("888888888888888888888888 8") };
+  assert.deepEqual(await runHack(request), { outcome: "InvalidInput" });
+  assert.deepEqual(calls.compile, [{ program: request.snapshot.validator, cppDefines: { FAIL_EXIT_CODE: "1" } }]);
+  assert.equal(calls.target.length, 0);
+  assert.equal(calls.cleanup, 1);
+});
+
+for (const [label, support] of [
+  ["unexpected validator exit code", [{ status: sandboxStatus.OK, code: 2 }]],
+  ["validator terminated by signal 1", [{ status: sandboxStatus.RuntimeError, code: 1 }]],
+  [
+    "reference exit code 1 with output",
+    [
+      { status: sandboxStatus.OK, code: 0 },
+      { status: sandboxStatus.OK, code: 1, output: Buffer.from("partial") }
+    ]
+  ],
+  [
+    "reference crash",
+    [
+      { status: sandboxStatus.OK, code: 0 },
+      { status: sandboxStatus.RuntimeError, code: 1 }
+    ]
+  ],
   [
     "oversized output",
-    [{ status: sandboxStatus.OK }, { status: sandboxStatus.OK, output: Buffer.alloc(129) }],
-    "JudgeError"
+    [
+      { status: sandboxStatus.OK, code: 0 },
+      { status: sandboxStatus.OK, code: 0, output: Buffer.alloc(129) }
+    ]
   ]
 ]) {
   test(`stops before judging the target on ${label}`, async () => {
-    const { runHack, calls } = await loadWorker({ support });
-    assert.deepEqual(await runHack(task()), { outcome });
+    const { runHack, calls } = await loadWorker({ support, target: [verdict.WrongAnswer] });
+    assert.deepEqual(await runHack(task()), { outcome: "JudgeError" });
     assert.equal(calls.target.length, 0);
     assert.equal(calls.cleanup, support.length);
   });

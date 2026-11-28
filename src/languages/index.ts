@@ -39,6 +39,8 @@ export interface LanguageConfig<T> {
      * Custom options passed by user
      */
     compileAndRunOptions: T;
+    /** C++ preprocessor definitions supplied by the judge. */
+    cppDefines?: Readonly<Record<string, string>>;
   }) => CompilationConfig;
 
   /**
