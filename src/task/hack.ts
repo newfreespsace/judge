@@ -5,7 +5,7 @@ import { SandboxStatus } from "simple-sandbox";
 
 import { compile, CompileResultSuccess, CompileTask } from "@/compile";
 import { CanceledError } from "@/error";
-import { getFile } from "@/file";
+import { getFile, retainTestdata } from "@/file";
 import * as fsNative from "@/fsNative";
 import getLanguage from "@/languages";
 import { CpuAffinityStrategy, runSandbox, SANDBOX_INSIDE_PATH_BINARY, SANDBOX_INSIDE_PATH_WORKING } from "@/sandbox";
@@ -132,8 +132,10 @@ async function runSupportProgram(task: HackTask, program: CompileTask, validate:
 }
 
 export async function runHack(task: HackTask): Promise<HackReport> {
+  let releaseTestdata: () => Promise<void>;
   try {
     const { snapshot, input, target, taskId } = task;
+    releaseTestdata = await retainTestdata([...Object.values(snapshot.testData), ...Object.keys(snapshot.artifacts)]);
     await Promise.all(Object.entries(snapshot.artifacts).map(([id, bytes]) => storeArtifact(id, bytes)));
 
     let output = task.referenceOutput;
@@ -154,5 +156,7 @@ export async function runHack(task: HackTask): Promise<HackReport> {
   } catch (error) {
     if (error instanceof CanceledError) throw error;
     return { outcome: "JudgeError" };
+  } finally {
+    await releaseTestdata?.();
   }
 }

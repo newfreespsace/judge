@@ -69,6 +69,9 @@ serverUrl: http://lyrio.test/
 key: 40uXJPXzuO2Ha41iuh8Pjw1h0ahvP9i/zJk7Rtn/
 // The path to store files downloaded from server, will be created if not exists
 dataStore: /root/judge/data
+// Optional test data cache limit in bytes. This example uses 10 GiB.
+// Checked daily at 03:00 in the judge host's local time.
+dataStoreMaxSize: 10737418240
 // The path to store compiled binaries, will be created if not exists
 // WILL be emptied on each start
 binaryCacheStore: /root/judge/cache

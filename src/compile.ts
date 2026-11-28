@@ -7,7 +7,7 @@ import winston from "winston";
 import { v4 as uuid } from "uuid";
 
 import getLanguage, { LanguageConfig } from "./languages";
-import { MappedPath, safelyJoinPath, ensureDirectoryEmpty } from "./utils";
+import { MappedPath, safelyJoinPath, ensureDirectoryEmpty, waitForAll } from "./utils";
 import { readFileOmitted, OmittableString, prependOmittableString } from "./omittableString";
 import {
   SandboxConfigBase,
@@ -41,7 +41,7 @@ async function hashCompileTask(compileTask: CompileTask): Promise<string> {
     compileAndRunOptions: compileTask.compileAndRunOptions,
     extraSourceFiles:
       compileTask.extraSourceFiles &&
-      (await Promise.all(
+      (await waitForAll(
         Object.entries(compileTask.extraSourceFiles).map(async ([filename, fileUuid]) => [
           filename,
           await getFileHash(fileUuid)
@@ -216,7 +216,7 @@ async function doCompile(
     ensureDirectoryEmpty(tempDirectoryOutside)
   ]);
 
-  await Promise.all(
+  await waitForAll(
     Object.entries(compileTask.extraSourceFiles || {}).map(([dst, src]) =>
       fs.promises.copyFile(getFile(src), safelyJoinPath(sourceDirectory.outside, dst))
     )

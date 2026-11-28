@@ -1,7 +1,7 @@
 import winston from "winston";
 
 import { Task } from "@/task";
-import { ensureFiles } from "@/file";
+import { ensureFiles, retainTestdata } from "@/file";
 import { ConfigurationError, CanceledError } from "@/error";
 import { OmittableString } from "@/omittableString";
 
@@ -174,6 +174,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
 ): Promise<void> {
   // Calculate the total wall time time occupied by this submission
   const startTime = new Date();
+  let releaseTestdata: () => Promise<void>;
 
   try {
     if (!(task.extraInfo.problemType in ProblemType)) {
@@ -186,6 +187,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
 
     // Download testdata files
     const requiredFiles = Object.values(task.extraInfo.testData);
+    releaseTestdata = await retainTestdata(requiredFiles);
     await ensureFiles(requiredFiles);
 
     // Downlaod submission file
@@ -335,6 +337,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
     });
     if (!isConfigurationError) winston.error(`Error on submission task ${task.taskId}, ${e.stack || e}`);
   } finally {
+    await releaseTestdata?.();
     // Remove downloaded submission file
     if (task.file) task.file.dispose();
   }

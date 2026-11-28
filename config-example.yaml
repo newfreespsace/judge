@@ -2,6 +2,9 @@ serverUrl: http://lyrio.test/
 downloadEndpointOverride: null
 key: 40uXJPXzuO2Ha41iuh8Pjw1h0ahvP9i/zJk7Rtn/
 dataStore: /root/judge/data
+# Optional test data cache limit in bytes. This example uses 10 GiB.
+# Checked daily at 03:00 in the judge host's local time.
+dataStoreMaxSize: 10737418240
 binaryCacheStore: /root/judge/cache
 binaryCacheMaxSize: 536870912
 taskConsumingThreads: 2

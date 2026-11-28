@@ -79,6 +79,11 @@ export class Config {
   @IsString()
   dataStore: string;
 
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  dataStoreMaxSize?: number;
+
   @IsString()
   binaryCacheStore: string;
 

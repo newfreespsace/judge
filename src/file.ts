@@ -8,10 +8,39 @@ import LRUCache from "lru-cache";
 import config from "./config";
 import rpc from "./rpc";
 import * as fsNative from "./fsNative";
-import { download, safelyJoinPath } from "./utils";
+import { TestdataCache } from "./testdata-cache";
+import { download, safelyJoinPath, waitForAll } from "./utils";
 
 const downloadingFiles: Map<string, Promise<void>> = new Map();
 const queue = new Queue(config.maxConcurrentDownloads, Infinity);
+const cache = new TestdataCache(config.dataStore, config.dataStoreMaxSize);
+
+export function retainTestdata(fileUuids: string[]) {
+  return cache.retain(fileUuids);
+}
+
+export function startTestdataCacheCleanup() {
+  if (config.dataStoreMaxSize == null) return;
+
+  function scheduleNext() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(3, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+
+    setTimeout(async () => {
+      try {
+        await cache.trim();
+      } catch (error) {
+        winston.warn(`Could not clean test data cache: ${error.message}`);
+      } finally {
+        scheduleNext();
+      }
+    }, next.getTime() - now.getTime()).unref();
+  }
+
+  scheduleNext();
+}
 
 async function fileExists(fileUuid: string): Promise<boolean> {
   return await fsNative.exists(safelyJoinPath(config.dataStore, fileUuid));
@@ -70,7 +99,7 @@ export async function ensureFiles(fileUuids: string[]) {
     });
   }
 
-  return await Promise.all([...alreadyDownloading, ...newDownloading]);
+  return await waitForAll([...alreadyDownloading, ...newDownloading]);
 }
 
 export function getFile(fileUuid: string) {

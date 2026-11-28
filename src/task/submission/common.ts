@@ -3,6 +3,7 @@ import winston from "winston";
 
 import { Disposer } from "@/posixUtils";
 import { runTaskQueued } from "@/taskQueue";
+import { waitForAll } from "@/utils";
 
 import { SubmissionTask, ProblemSample, SubmissionStatus } from ".";
 
@@ -210,7 +211,7 @@ export async function runCommonTask<
 
     let results: TestcaseResult[];
     if (subtask.scoringType === "Sum") {
-      results = await Promise.all(
+      results = await waitForAll(
         normalizedTestcases.map(async (testcase, i) => {
           const result = await runTestcaseQueued(null, null, subtaskIndex, i, testcase);
           subtaskScore += (result.score * normalizedTestcases[i].points) / 100;

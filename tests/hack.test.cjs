@@ -47,7 +47,7 @@ async function loadSource(filename, deps, globals = {}) {
 
 async function loadWorker({ target = [], support = [] } = {}) {
   const directory = await fs.mkdtemp(path.join(fixtureRoot, "worker-"));
-  const calls = { target: [], support: [], compile: [], cleanup: 0 };
+  const calls = { target: [], support: [], compile: [], cleanup: 0, retained: [], released: 0 };
   const deps = {
     "simple-sandbox": { SandboxStatus: sandboxStatus },
     "@/compile": {
@@ -58,7 +58,15 @@ async function loadWorker({ target = [], support = [] } = {}) {
       CompileResultSuccess
     },
     "@/error": { CanceledError },
-    "@/file": { getFile: id => path.join(directory, id) },
+    "@/file": {
+      getFile: id => path.join(directory, id),
+      retainTestdata: async ids => {
+        calls.retained.push(...new Set(ids));
+        return async () => {
+          calls.released++;
+        };
+      }
+    },
     "@/fsNative": {
       exists: filename =>
         fs.access(filename).then(
@@ -153,6 +161,8 @@ test("validates stdin then preserves raw reference output for a file I/O target"
   assert.deepEqual(calls.target[0].slice(-2), [request.input, output]);
   assert.deepEqual(await fs.readFile(path.join(directory, artifactId)), artifact);
   assert.equal(calls.cleanup, 2);
+  assert.deepEqual(calls.retained, [artifactId]);
+  assert.equal(calls.released, 1);
 });
 
 test("uses the stored output on replay and confirms TLE with identical bytes", async () => {

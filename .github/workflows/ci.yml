@@ -28,6 +28,8 @@ jobs:
       run: node tests/native.test.cjs
     - name: Test Hack verdicts
       run: node --test tests/hack.test.cjs
+    - name: Test test data cache
+      run: node --test tests/testdata-cache.test.cjs
     - name: Test building
       run: yarn test
     - name: Lint

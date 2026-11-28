@@ -6,7 +6,7 @@ import { SubmissionTask, ProblemSample } from "@/task/submission";
 import { compile, CompileResultSuccess } from "@/compile";
 import { SANDBOX_INSIDE_PATH_WORKING } from "@/sandbox";
 import { serverSideConfig } from "@/config";
-import { safelyJoinPath } from "@/utils";
+import { safelyJoinPath, waitForAll } from "@/utils";
 import { isOmittableString, OmittableString, readFileOmitted, prependOmittableString } from "@/omittableString";
 import { getFile } from "@/file";
 import { ConfigurationError } from "@/error";
@@ -188,7 +188,7 @@ export async function runTask(
   // Wait until
   // 1. The submission file is downloaded
   // 2. The custom check is compiled
-  await Promise.all([
+  const preparation = [
     (async () => {
       await task.file.waitForDownload();
       unzipResult = await task.file.unzip(wantedFiles);
@@ -213,9 +213,10 @@ export async function runTask(
         customCheckerCompileResult = compileResult;
       }
     })()
-  ]);
+  ];
 
   try {
+    await waitForAll(preparation);
     await runCommonTask({
       task,
       extraParameters: [unzipResult, customCheckerCompileResult],

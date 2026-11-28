@@ -60,6 +60,16 @@ export function ensureDirectoryEmptySync(path: string) {
   fsNative.emptyDirSync(path);
 }
 
+// A failed operation must not release shared files while sibling operations still use them.
+export async function waitForAll<T>(operations: Promise<T>[]): Promise<T[]> {
+  try {
+    return await Promise.all(operations);
+  } catch (error) {
+    await Promise.allSettled(operations);
+    throw error;
+  }
+}
+
 /**
  * Read a file's first at most `lengthLimit` bytes, ignoring the remaining bytes.
  */
